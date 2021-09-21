@@ -1,0 +1,297 @@
+---
+header-includes:
+  - \AtBeginDocument{\let\maketitle\relax}
+classoption: landscape
+geometry: left=0mm, right=0mm, top=0mm, bottom=0mm
+output: pdf_document
+params:
+  site_type: Urban
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, message = FALSE, warning = FALSE}
+## load libraries
+library(tidyverse)
+library(readxl)
+library(gridtext)
+library(patchwork)
+library(png)
+library(gridExtra)
+library(usmap)
+library(ggtext)
+library(emojifont)
+```
+
+```{r data, message=F, warning=F}
+source("initialize_FIM_funs.R")
+df <- read_batt_data(filename = '../data/batt-et-al-2017-SI.xlsx')
+
+## load in lat/long data
+site_info <- read_xlsx('../data/batt-et-al-2017-SI.xlsx', sheet='siteinfo') %>%
+  add_row(`Site ID` = "FW08KY027", lat = 37.88542, long = -84.24638)
+
+## load in river info
+river_df <- read_xlsx("../data/fish_tissue_0809_PCB.xlsx",
+                      sheet = 'NRSA 2008 Sample Info',
+                      range = cell_cols(c("A:I")))
+
+river_df <- river_df %>%
+  select(`EPA Region`, `Site ID`, `River Name`, `Stream Order`)
+
+## filter riverdf to remove duplicates
+river_df <- river_df %>% distinct(`Site ID`, .keep_all = TRUE)
+
+## merge into one df
+df_filtered <- inner_join(df, site_info) %>%
+  left_join(river_df, by = "Site ID") %>%
+  filter(`Site Type` == params$site_type) # filter based on YAML parameter
+```
+
+```{r settings}
+## define EPA colors
+epa_blue <- "#407EC9"
+epa_green <- "#509E2F"
+
+## define font sizes
+font_small <- "10pt;"
+font_medium <- "14pt;"
+font_big <- "22pt;"
+
+## make stacked bar plot color palette
+epa_palette <- c("#407EC9", "#509E2F", "lightgoldenrod3", "navyblue")
+```
+
+```{r map, warning=FALSE, message=FALSE}
+## make map object
+map_transformed <- df_filtered %>%
+  dplyr::select(long, lat) %>%
+  usmap_transform() #Convert projection
+
+p_map <- plot_usmap(exclude = c("Hawaii", "Alaska"), #Exclude Hawaii and Alaska
+                     color = "gray",
+                     fill = "gray90") +
+  geom_point(data = map_transformed, #Plot longitude and latitude coordinates
+             aes(x = long.1, y = lat.1), 
+             color = epa_blue,
+             size = 1) +
+  labs(caption = "Map of fish tissue \n sampling sites") +
+  theme(plot.caption = element_text(size = 12 ,hjust = 0.12, vjust  = 16))
+  # ggtitle("Site Map") +
+  # theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r text, warning = FALSE, message = FALSE}
+## Subset parameters we need from df
+site_id_max <- df_filtered %>%
+  filter(Amount >= `Max QL`) %>% #Filter chemicals above QL
+  group_by(`Site ID`) %>%
+  summarize(chems = n()) %>%
+  slice_max(chems) %>%
+  pull(`Site ID`)
+
+nchems_max <- df_filtered %>%
+  filter(Amount >= `Max QL`) %>%
+  group_by(`Site ID`) %>%
+  summarize(chems = n()) %>%
+  slice_max(chems) %>%
+  pull(chems)
+
+river_max <- df_filtered %>%
+  filter(Amount >= `Max QL`) %>% #Filter chemicals above QL
+  group_by(`River Name`) %>%
+  summarize(sites = length(unique(`Site ID`))) %>%
+  slice_max(sites) %>%
+  pull(`River Name`)
+
+nsites_river <- df_filtered %>%
+  filter(Amount >= `Max QL`) %>%
+  group_by(`River Name`) %>%
+  summarize(sites = length(unique(`Site ID`))) %>%
+  slice_max(sites) %>%
+  pull(sites)
+
+num_sites <- df_filtered %>% 
+  distinct(`Site ID`) %>%
+  nrow()
+
+num_chems <- df_filtered %>%
+  distinct(`Analyte`) %>%
+  nrow()
+
+num_rivers <- df_filtered %>%
+  distinct(`River Name`) %>%
+  nrow()
+
+number_sty <- paste0("<span style = 'font-size:",
+                   font_big,
+                   " color: black;'>")
+
+word_sty <- paste0("<span style ='font-size:", font_small, 
+                   " color: ", epa_blue, ";'>")
+
+normal_sty <- paste0("<span style ='font-size:", font_medium, 
+                   " color: ", epa_blue, ";'>")
+
+txt0_str <- paste0(word_sty, " Number of Sites</span><br>",
+                   number_sty, "<b>",num_sites, "</b></span>",
+                  "<br><br>",
+                  word_sty, " Number of Chemicals</span><br>",
+                  number_sty, "<b>",num_chems, "</b></span>",
+                  "<br><br>",
+                  word_sty, " Number of Rivers</span><br>",
+                  number_sty, "<b>",num_rivers, "</b></span>")
+
+txt1_str <- paste(word_sty, "Fish Tissue Data sampled across <b>21</b> PCBs, <b>8</b> PBDEs, and <b>21</b> pesticides.</span>")
+
+txt2_str <- paste(normal_sty, "<i>Which site had the most chemicals present?</i></span>",
+                  "<br><br>",
+                  number_sty, "<b>",site_id_max, "</b></span>", normal_sty, "with</span>",
+                  number_sty, "<b>",nchems_max, "</b></span>", normal_sty, "chemicals</span>")
+
+txt3_str <- paste(normal_sty, "<i>Which river had the most sites?</i></span>",
+                  "<br><br>",
+                  number_sty, "<b>",river_max, "</b></span>", normal_sty, "with</span>",
+                  number_sty, "<b>",nsites_river, "</b></span>", normal_sty, "sites</span>")
+
+txt0 <- textbox_grob(txt0_str, halign = 0.5)
+txt1 <- textbox_grob(txt1_str, halign = 0.5)
+txt2 <- textbox_grob(txt2_str, halign = 0.5)
+txt3 <- textbox_grob(txt3_str, halign = 0.5)
+
+```
+
+```{r logos}
+epa_logo <- readPNG("../image/epa_logo.png", native = TRUE)
+  
+emoji_fish <- ggplot() +
+  geom_emoji("tropical_fish", color = "#407EC9", size = 30) + theme_void()
+
+```
+
+```{r plots, warning = F, message = F}
+## add conc threshold intervals
+df_thresh <- df_filtered %>% 
+  mutate(conc_thresh = 
+           case_when(
+             Amount <= `Max MDL` ~ 'Detected < MDL',
+             Amount > `Max MDL` & Amount <= `Max QL` ~ 'MDL < x < QL',
+             Amount > `Max QL` ~ 'Above QL',
+             TRUE ~ 'Not detected'
+           )
+  )
+## number of sites
+n_sites <- df_thresh %>% 
+  distinct(`Site ID`) %>% 
+  nrow
+## calculate # of nondetects
+n_nondet <- df_thresh %>% 
+  group_by(Analyte) %>% 
+  summarise(n_nondetects = sum(is.na(Amount)))
+## calculate # above QL
+n_above_ql <- df_thresh %>% 
+  group_by(Analyte) %>% 
+  summarise(n_above_ql = sum(conc_thresh == 'Above QL'))
+## order by most # of sites above QL
+df_reordered <- df_thresh %>% 
+  left_join(n_above_ql) %>%
+  mutate(conc_thresh = factor(conc_thresh, 
+                              levels = c('Not detected', 'Detected < MDL',
+                                         'MDL < x < QL', 'Above QL')),
+         Analyte = fct_reorder(Analyte, n_above_ql)) 
+## create stacked barchart, ordered by % of nondetects
+p_stacked <- 
+  df_reordered %>%
+  filter(Class == 'OCP') %>%
+  ggplot(aes(x = Analyte, fill = conc_thresh)) +
+  geom_bar(position = position_stack(reverse = TRUE), width = 0.6) + 
+  theme_bw() +
+  coord_flip() + 
+  #geom_hline(aes(yintercept = n_sites / 2)) +
+  scale_y_continuous(name = 'Percent of Sites',
+                     breaks = seq(0, n_sites, length.out = 6),
+                     labels = paste0(seq(0, 100, by=20), '%'),
+                     expand=c(0,0)) +
+  scale_fill_manual(values = epa_palette) +
+  ggtitle(paste('Concentration Level of Pesticides')) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'bottom') +
+  guides(fill=guide_legend(nrow = 1, byrow = TRUE, title = ''))
+
+
+## calculate top 5 chems by prevalence
+tab_above_ql <- n_above_ql %>% 
+  add_column(n_sites) %>% 
+  mutate(pct_above_ql = 
+           paste0(round(100 * n_above_ql / n_sites, 1),"%")) %>% 
+  arrange(-n_above_ql) %>% 
+  select(Analyte, `% sites \n above QL` = pct_above_ql) %>% 
+  head(n = 6)
+
+## table that works with patchwork
+tab1 <- tableGrob(tab_above_ql, rows = NULL,
+                     theme = ttheme_default())
+```
+\begin{figure}[p]
+```{r, fig.width = 10.5, fig.height = 8, fig.align = 'center'}
+
+## adding spacer column on left and moving everything over
+layout <- c(
+    area(t = 1, l = 2, b = 2, r = 3), # map
+    area(t = 1, l = 4, b = 2, r = 4), # text 0
+    area(t = 1, l = 5, b = 1, r = 5), # fish logo
+    area(t = 1, l = 6, b = 1, r = 6), # epa logo
+    area(t = 2, l = 5, b = 2, r = 6), # text 1
+    area(t = 3, l = 5, b = 3, r = 6), # text 2
+    area(t = 3, l = 3, b = 4, r = 4), # bar chart
+    area(t = 3, l = 2, b = 4, r = 2), # table
+    area(t = 4, l = 5, b = 4, r = 6), # text 3
+    area(t = 1, l = 1, b = 4, r = 1) # space on left
+)
+
+
+## create list of objects for patchwork
+graphics_list <- list(p_map, wrap_elements(txt0), wrap_elements(emoji_fish),
+                      wrap_elements(epa_logo), wrap_elements(txt1),
+                      wrap_elements(txt2), p_stacked,
+                      wrap_elements(tab1), wrap_elements(txt3),
+                      plot_spacer())
+
+## make title
+title_formatted <- paste0("<span style = 'float:right; font-size:", font_medium, "'>Summary of <span style = 'color: ", epa_blue, ";'><b>", params$site_type, "</b></span> sites from NRSA 2008-09</span>")
+
+## make subtitle
+subtitle_formatted <- paste0("Last Updated: ", format(Sys.Date(), '%B %d, %Y'))
+
+## make caption
+caption_str <- "Data collected from <br>1) EPA National Aquatic Resource Surveys (NARS) <br>2) 
+Batt, A. L., Wathen, J. B., Lazorchak, J. M., Olsen, A. R., & Kincaid, T. M. (2017). <i>Statistical survey of persistent organic pollutants: risk estimations to humans and wildlife through consumption of fish from US rivers</i>. Environmental science & technology, 51(5), 3021-3031."
+
+## build composite patchwork object
+pw_out <- wrap_plots(graphics_list, design = layout, 
+                      widths = c(0.5, 2.5, 1.5, 2, 2, 2)) + 
+  plot_annotation(title = title_formatted,
+                  subtitle = subtitle_formatted,
+                  caption = caption_str,
+                  theme = theme(plot.title = element_textbox_simple(
+                    size = 13,
+                    lineheight = 1,
+                    padding = margin(5.5, 5.5, 5.5, 5.5),
+                    margin = margin(0, 0, 5.5, 0),
+                    fill = "cornsilk"
+                  ),
+                  plot.caption = element_textbox_simple(
+                    fill = 'cornsilk'
+                  ),
+                  plot.background = element_rect(fill = NA, colour = epa_blue, size = 3)
+                  )
+                )
+
+
+pw_out
+```
+\end{figure}
