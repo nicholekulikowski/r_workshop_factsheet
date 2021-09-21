@@ -1,8 +1,8 @@
 # 2021 R-User Workshop: Fact Sheet Session
 Scripts, data, and figures for making R-Markdown factsheets. This repository was created to share code from the talk, "Creating Customized Fact Sheets with Patchwork and R-Markdown", which was given as part of EPA's 2021 R-User Group Workshop.
 
-Authors:
-Marschall Furman
+**Authors:** <br />
+Marschall Furman <br />
 Nichole Kulikowski
 <img src="image\readme_factsheet.jpg" >
 
